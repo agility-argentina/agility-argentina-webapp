@@ -1,7 +1,22 @@
-import { type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
+  // Portón temporal de "sitio en construcción". Se activa solo si existe
+  // SITE_PIN en las variables de entorno — para lanzar de verdad, alcanza
+  // con borrar SITE_PIN y SITE_UNLOCK_TOKEN en Vercel, sin tocar código.
+  if (process.env.SITE_PIN) {
+    const path = request.nextUrl.pathname;
+    const desbloqueado = request.cookies.get("site_unlock")?.value === process.env.SITE_UNLOCK_TOKEN;
+
+    if (!desbloqueado && path !== "/acceso-restringido") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/acceso-restringido";
+      url.search = `?next=${encodeURIComponent(path)}`;
+      return NextResponse.redirect(url);
+    }
+  }
+
   return updateSession(request);
 }
 
