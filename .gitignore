@@ -34,6 +34,9 @@ yarn-error.log*
 .env*
 .supabase-db-password.txt
 
+# datos reales de personas, solo para pruebas locales
+supabase/seed.local.sql
+
 # vercel
 .vercel
 
