@@ -2,6 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { logout } from "@/app/(con-topbar)/login/actions";
+import { AccountMenu } from "@/components/account-menu";
 
 export async function SiteHeader() {
   const supabase = await createClient();
@@ -25,7 +26,7 @@ export async function SiteHeader() {
     label = "Ir a mi panel";
   }
 
-  const enPanelPropio = user && pathname === panelHref;
+  const enPanelPropio = !!user && pathname.startsWith(panelHref);
 
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200">
@@ -47,11 +48,7 @@ export async function SiteHeader() {
           </Link>
 
           {enPanelPropio ? (
-            <form action={logout}>
-              <button className="foco inline-flex items-center gap-2 px-3.5 py-2 text-[13px] font-semibold rounded-md border border-slate-300 text-rose-700 hover:bg-rose-50 transition-colors">
-                Cerrar sesión
-              </button>
-            </form>
+            <AccountMenu cuentaHref={`${panelHref}/cuenta`} logout={logout} />
           ) : (
             <Link
               href={panelHref}
