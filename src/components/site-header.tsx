@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { logout } from "@/app/login/actions";
 
-export async function SiteHeader() {
+export async function SiteHeader({ enPanelPropio = false }: { enPanelPropio?: boolean }) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -40,12 +41,20 @@ export async function SiteHeader() {
             </span>
           </Link>
 
-          <Link
-            href={panelHref}
-            className="foco inline-flex items-center gap-2 px-3.5 py-2 text-[13px] font-semibold rounded-md border border-slate-300 hover:bg-slate-50 transition-colors"
-          >
-            {label}
-          </Link>
+          {user && enPanelPropio ? (
+            <form action={logout}>
+              <button className="foco inline-flex items-center gap-2 px-3.5 py-2 text-[13px] font-semibold rounded-md border border-slate-300 text-rose-700 hover:bg-rose-50 transition-colors">
+                Cerrar sesión
+              </button>
+            </form>
+          ) : (
+            <Link
+              href={panelHref}
+              className="foco inline-flex items-center gap-2 px-3.5 py-2 text-[13px] font-semibold rounded-md border border-slate-300 hover:bg-slate-50 transition-colors"
+            >
+              {label}
+            </Link>
+          )}
         </div>
       </div>
     </header>
