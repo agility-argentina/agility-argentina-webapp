@@ -1,12 +1,15 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { logout } from "@/app/login/actions";
+import { logout } from "@/app/(con-topbar)/login/actions";
 
-export async function SiteHeader({ enPanelPropio = false }: { enPanelPropio?: boolean }) {
+export async function SiteHeader() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  const pathname = (await headers()).get("x-pathname") ?? "";
 
   let panelHref = "/login";
   let label = "Mi cuenta";
@@ -21,6 +24,8 @@ export async function SiteHeader({ enPanelPropio = false }: { enPanelPropio?: bo
     panelHref = cuenta?.rol === "admin" ? "/panel/admin" : "/panel/grupo";
     label = "Ir a mi panel";
   }
+
+  const enPanelPropio = user && pathname === panelHref;
 
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200">
@@ -41,7 +46,7 @@ export async function SiteHeader({ enPanelPropio = false }: { enPanelPropio?: bo
             </span>
           </Link>
 
-          {user && enPanelPropio ? (
+          {enPanelPropio ? (
             <form action={logout}>
               <button className="foco inline-flex items-center gap-2 px-3.5 py-2 text-[13px] font-semibold rounded-md border border-slate-300 text-rose-700 hover:bg-rose-50 transition-colors">
                 Cerrar sesión

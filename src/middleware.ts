@@ -2,6 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
+  // Deja el pathname actual disponible como header de request, para que
+  // Server Components (ej. SiteHeader) sepan en qué página están sin
+  // tener que recibirlo como prop desde cada page.tsx.
+  request.headers.set("x-pathname", request.nextUrl.pathname);
+
   // Portón temporal de "sitio en construcción". Se activa solo si existe
   // SITE_PIN en las variables de entorno — para lanzar de verdad, alcanza
   // con borrar SITE_PIN y SITE_UNLOCK_TOKEN en Vercel, sin tocar código.
