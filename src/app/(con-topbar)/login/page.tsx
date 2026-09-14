@@ -1,4 +1,5 @@
 import { login } from "./actions";
+import { LoginButton } from "./submit-button";
 
 export default async function LoginPage({
   searchParams,
@@ -38,12 +39,7 @@ export default async function LoginPage({
               className="w-full border border-slate-300 rounded px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-600"
             />
           </label>
-          <button
-            type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded px-4 py-2.5 transition-colors"
-          >
-            Ingresar
-          </button>
+          <LoginButton />
         </form>
       </div>
     </main>
