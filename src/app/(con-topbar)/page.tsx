@@ -4,30 +4,52 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { DirectorioClubes, type ClubDirectorio } from "@/components/directorio-clubes";
 
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
   const supabase = await createClient();
 
-  const { data: clubesData } = await supabase
-    .from("clubes")
-    .select("id, nombre, ciudad, regiones(nombre)")
-    .order("nombre");
+  let clubes: ClubDirectorio[] = [];
+  let clubesError = false;
+  try {
+    const { data: clubesData, error } = await supabase
+      .from("clubes")
+      .select("id, nombre, ciudad, regiones(nombre)")
+      .order("nombre");
+    if (error) throw error;
 
-  const clubes: ClubDirectorio[] = (clubesData ?? []).map((c) => ({
-    id: c.id,
-    nombre: c.nombre,
-    ciudad: c.ciudad,
-    region: (c.regiones as unknown as { nombre: string } | null)?.nombre ?? "",
-  }));
+    clubes = (clubesData ?? []).map((c) => ({
+      id: c.id,
+      nombre: c.nombre,
+      ciudad: c.ciudad,
+      region: (c.regiones as unknown as { nombre: string } | null)?.nombre ?? "",
+    }));
+  } catch (err) {
+    // Ej. Supabase pausado/inalcanzable. No cortar el render de la home
+    // por esto — se muestra "Cargando…" en vez de un número mal, y queda
+    // el error acá para diagnosticar en los logs del servidor.
+    console.error("No se pudo obtener el listado de clubes:", err);
+    clubesError = true;
+  }
 
   const regiones = [...new Set(clubes.map((c) => c.region))].sort();
 
   // Conteo agregado con service role: RLS oculta `duplas` a visitantes
   // anónimos a propósito (nombres de guías no son públicos), pero el
   // número total sí es información pública sin problema.
-  const { count: duplasActivas } = await createServiceClient()
-    .from("duplas")
-    .select("id", { count: "exact", head: true })
-    .eq("estado", "activa");
+  let duplasActivas: number | null = null;
+  let duplasError = false;
+  try {
+    const { count, error } = await createServiceClient()
+      .from("duplas")
+      .select("id", { count: "exact", head: true })
+      .eq("estado", "activa");
+    if (error) throw error;
+    duplasActivas = count ?? 0;
+  } catch (err) {
+    console.error("No se pudo obtener el conteo de duplas activas:", err);
+    duplasError = true;
+  }
 
   return (
     <>
@@ -65,12 +87,14 @@ export default async function Home() {
               <dl className="mt-11 pt-8 border-t border-blue-700/60 grid grid-cols-2 gap-6 max-w-xs">
                 <div>
                   <dd className="font-display text-[34px] leading-none tabular font-semibold">
-                    {duplasActivas ?? 0}
+                    {duplasError ? "Cargando…" : duplasActivas}
                   </dd>
                   <dt className="mt-1.5 text-[12.5px] text-blue-200">duplas activas</dt>
                 </div>
                 <div>
-                  <dd className="font-display text-[34px] leading-none tabular font-semibold">{clubes.length}</dd>
+                  <dd className="font-display text-[34px] leading-none tabular font-semibold">
+                    {clubesError ? "Cargando…" : clubes.length}
+                  </dd>
                   <dt className="mt-1.5 text-[12.5px] text-blue-200">grupos homologados</dt>
                 </div>
               </dl>
