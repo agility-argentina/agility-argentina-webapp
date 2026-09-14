@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Camera, X } from "lucide-react";
 import { guardarDupla } from "./actions";
 import type { DuplaConLibreta } from "./duplas-tabla";
+import { FechaInput } from "@/components/fecha-input";
 
 type EstadoAccion = { error?: string; success?: boolean };
 
@@ -19,13 +20,14 @@ export function DuplaModal({
 }) {
   const router = useRouter();
   const [nombreArchivo, setNombreArchivo] = useState<string | null>(null);
+  const [fechaAplicacion, setFechaAplicacion] = useState(dupla?.libreta?.fecha_aplicacion ?? "");
   const [fechaVencimiento, setFechaVencimiento] = useState(dupla?.libreta?.fecha_vencimiento ?? "");
   const formRef = useRef<HTMLFormElement>(null);
 
-  function alCambiarFechaAplicacion(e: React.ChangeEvent<HTMLInputElement>) {
-    const aplicacion = e.target.value;
-    if (!aplicacion) return;
-    const fecha = new Date(aplicacion);
+  function alCambiarFechaAplicacion(iso: string) {
+    setFechaAplicacion(iso);
+    if (!iso) return;
+    const fecha = new Date(iso);
     fecha.setUTCFullYear(fecha.getUTCFullYear() + 1);
     setFechaVencimiento(fecha.toISOString().slice(0, 10));
   }
@@ -165,23 +167,11 @@ export function DuplaModal({
             <div className="grid sm:grid-cols-2 gap-4">
               <label className="block">
                 <span className="block text-[13px] mb-1.5 font-medium">Antirrábica aplicada el</span>
-                <input
-                  name="fecha_aplicacion"
-                  type="date"
-                  defaultValue={dupla?.libreta?.fecha_aplicacion ?? ""}
-                  onChange={alCambiarFechaAplicacion}
-                  className="foco w-full border border-slate-300 rounded px-3 py-2.5 text-[14px] text-slate-900 tabular outline-none focus:border-blue-600"
-                />
+                <FechaInput name="fecha_aplicacion" value={fechaAplicacion} onChange={alCambiarFechaAplicacion} />
               </label>
               <label className="block">
                 <span className="block text-[13px] mb-1.5 font-medium">Vence el</span>
-                <input
-                  name="fecha_vencimiento"
-                  type="date"
-                  value={fechaVencimiento}
-                  onChange={(e) => setFechaVencimiento(e.target.value)}
-                  className="foco w-full border border-slate-300 rounded px-3 py-2.5 text-[14px] text-slate-900 tabular outline-none focus:border-blue-600"
-                />
+                <FechaInput name="fecha_vencimiento" value={fechaVencimiento} onChange={setFechaVencimiento} />
                 <span className="block text-[11.5px] text-slate-400 mt-1">Se autocompleta a un año, se puede ajustar.</span>
               </label>
             </div>

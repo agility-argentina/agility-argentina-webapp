@@ -5,9 +5,11 @@ import Link from "next/link";
 import { User } from "lucide-react";
 
 export function AccountMenu({
+  panelHref,
   cuentaHref,
   logout,
 }: {
+  panelHref: string;
   cuentaHref: string;
   logout: () => Promise<void>;
 }) {
@@ -35,6 +37,13 @@ export function AccountMenu({
 
       {abierto && (
         <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-md shadow-lg py-1 z-50">
+          <Link
+            href={panelHref}
+            onClick={() => setAbierto(false)}
+            className="block px-4 py-2 text-[13px] text-slate-700 hover:bg-slate-50"
+          >
+            Ir a mi panel
+          </Link>
           <Link
             href={cuentaHref}
             onClick={() => setAbierto(false)}
