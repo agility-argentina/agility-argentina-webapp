@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Dog } from "lucide-react";
-import { obtenerUrlLibreta } from "./actions";
+import { obtenerUrlLibreta, pedirNumeroRegistro } from "./actions";
 import { DuplaModal } from "./dupla-modal";
 import { useOrden } from "@/lib/use-orden";
 import { ThOrdenable } from "@/components/th-ordenable";
@@ -11,6 +12,7 @@ import { ordenNreg } from "@/lib/orden-nreg";
 export type DuplaConLibreta = {
   id: string;
   nreg: string | null;
+  microchip: string | null;
   guia_nombre: string;
   perro_nombre: string;
   grado: string;
@@ -23,7 +25,22 @@ export type DuplaConLibreta = {
     fecha_aplicacion: string | null;
     fecha_vencimiento: string | null;
   } | null;
+  pedido: {
+    estado: "pendiente" | "asignado" | "rechazado";
+    pedido_en: string;
+    motivo_rechazo: string | null;
+  } | null;
 };
+
+// Mismos requisitos que valida `pedir_nreg` en la base; acá solo sirven para
+// explicarle al club qué le falta sin tener que ir al servidor.
+function faltaParaPedirNumero(d: DuplaConLibreta) {
+  if (d.estado !== "activa") return "La dupla tiene que estar activa para pedir el número.";
+  if (!d.microchip?.trim()) return `Cargá el microchip de ${d.perro_nombre} (en Editar) antes de pedir el número.`;
+  if (d.libreta?.estado !== "aprobado" && d.libreta?.estado !== "porvencer")
+    return `La libreta sanitaria de ${d.perro_nombre} tiene que estar aprobada y vigente.`;
+  return null;
+}
 
 const LIBRETA: Record<string, { texto: string; clase: string; punto: string }> = {
   aprobado: { texto: "Aprobada", clase: "bg-emerald-50 text-emerald-800 ring-emerald-200", punto: "bg-emerald-500" },
@@ -90,7 +107,9 @@ function comparar(a: DuplaConLibreta, b: DuplaConLibreta, columna: ColumnaOrden,
 
 export function DuplasTabla({ duplas }: { duplas: DuplaConLibreta[] }) {
   const [modal, setModal] = useState<"cerrado" | "nueva" | DuplaConLibreta>("cerrado");
+  const router = useRouter();
   const [cargandoLibreta, setCargandoLibreta] = useState<string | null>(null);
+  const [pidiendo, setPidiendo] = useState<string | null>(null);
   const [aviso, setAviso] = useState<{ texto: string; tipo: "error" | "info" } | null>(null);
 
   const [busqueda, setBusqueda] = useState("");
@@ -112,6 +131,26 @@ export function DuplasTabla({ duplas }: { duplas: DuplaConLibreta[] }) {
       })
       .sort((a, b) => comparar(a, b, orden.columna, orden.asc));
   }, [duplas, busqueda, mostrarInactivas, filtroLibreta, orden]);
+
+  async function pedirNumero(d: DuplaConLibreta) {
+    const falta = faltaParaPedirNumero(d);
+    if (falta) {
+      setAviso({ texto: falta, tipo: "info" });
+      return;
+    }
+    setPidiendo(d.id);
+    const resultado = await pedirNumeroRegistro(d.id);
+    setPidiendo(null);
+    if (resultado.error) {
+      setAviso({ texto: resultado.error, tipo: "error" });
+      return;
+    }
+    router.refresh();
+    setAviso({
+      texto: `Listo, se le pidió a la comisión el número de registro de ${d.perro_nombre}. Cuando lo asignen pasa a G1.`,
+      tipo: "info",
+    });
+  }
 
   async function verLibreta(d: DuplaConLibreta) {
     if (!d.libreta?.archivo_path) {
@@ -223,7 +262,26 @@ export function DuplasTabla({ duplas }: { duplas: DuplaConLibreta[] }) {
                   const estado = ESTADO_DUPLA[d.estado];
                   return (
                     <tr key={d.id} className="hover:bg-blue-50/40 transition-colors">
-                      <td className="px-5 py-3.5 tabular font-semibold">{d.nreg ?? "—"}</td>
+                      <td className="px-5 py-3.5 tabular font-semibold">
+                        {d.nreg ?? "—"}
+                        {!d.nreg && d.pedido?.estado === "pendiente" && (
+                          <span className="block text-[11.5px] font-semibold text-blue-700 mt-0.5">En trámite</span>
+                        )}
+                        {!d.nreg && d.pedido?.estado === "rechazado" && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAviso({
+                                texto: `La comisión rechazó el pedido de ${d.perro_nombre}: ${d.pedido?.motivo_rechazo ?? "sin motivo"}. Podés volver a pedirlo cuando esté resuelto.`,
+                                tipo: "error",
+                              })
+                            }
+                            className="foco block text-[11.5px] font-semibold text-rose-700 hover:underline mt-0.5"
+                          >
+                            Pedido rechazado
+                          </button>
+                        )}
+                      </td>
                       <td className="px-5 py-3.5 text-slate-600">
                         {d.grado} · {d.tamano}
                         {d.categoria_nota && (
@@ -264,6 +322,19 @@ export function DuplasTabla({ duplas }: { duplas: DuplaConLibreta[] }) {
                         >
                           Editar
                         </button>
+                        {!d.nreg && d.pedido?.estado !== "pendiente" && (
+                          <>
+                            <span className="text-slate-300 mx-1.5">·</span>
+                            <button
+                              onClick={() => pedirNumero(d)}
+                              disabled={pidiendo === d.id}
+                              title={faltaParaPedirNumero(d) ?? "Pedirle a la comisión el número de registro para pasar a G1"}
+                              className="foco text-[13px] text-blue-700 hover:underline font-semibold disabled:opacity-50"
+                            >
+                              {pidiendo === d.id ? "Pidiendo…" : "Pedir nº"}
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   );

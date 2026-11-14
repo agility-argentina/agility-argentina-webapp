@@ -5,6 +5,7 @@ import { Dog } from "lucide-react";
 import { useOrden } from "@/lib/use-orden";
 import { ThOrdenable } from "@/components/th-ordenable";
 import { ordenNreg } from "@/lib/orden-nreg";
+import { PerroDetalle } from "./perro-detalle";
 
 export type PerroFila = {
   id: string;
@@ -16,6 +17,21 @@ export type PerroFila = {
   grado: string;
   tamano: string;
   estado: "activa" | "inactiva";
+  // Solo para el detalle ("Ver").
+  microchip: string | null;
+  guia_dni: string | null;
+  guia_email: string | null;
+  categoria_nota: string | null;
+  created_at: string;
+  pedidoEnTramite: boolean;
+  libreta: {
+    estado: string;
+    archivo_path: string | null;
+    enviada_en: string | null;
+    fecha_aplicacion: string | null;
+    fecha_vencimiento: string | null;
+    motivo_rechazo: string | null;
+  } | null;
 };
 
 const ESTADO_DUPLA = {
@@ -82,6 +98,7 @@ export function TodosLosPerros({ perros, regiones }: { perros: PerroFila[]; regi
   const [filtroRegion, setFiltroRegion] = useState("todas");
   const [mostrarInactivas, setMostrarInactivas] = useState(false);
   const { orden, ordenarPor } = useOrden<ColumnaOrden>("nreg");
+  const [viendo, setViendo] = useState<PerroFila | null>(null);
 
   const visibles = useMemo(() => {
     const texto = busqueda.trim().toLowerCase();
@@ -143,12 +160,15 @@ export function TodosLosPerros({ perros, regiones }: { perros: PerroFila[]; regi
                 {COLUMNAS.map((c) => (
                   <ThOrdenable key={c.key} columna={c.key} etiqueta={c.etiqueta} orden={orden} onClick={ordenarPor} />
                 ))}
+                <th className="px-5 py-3">
+                  <span className="sr-only">Acciones</span>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-[13.5px]">
               {visibles.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-slate-500">
+                  <td colSpan={8} className="px-5 py-10 text-center text-slate-500">
                     {perros.length === 0 ? "Todavía no hay duplas cargadas." : "Ninguna dupla coincide con el filtro."}
                   </td>
                 </tr>
@@ -174,6 +194,14 @@ export function TodosLosPerros({ perros, regiones }: { perros: PerroFila[]; regi
                           {estado.texto}
                         </span>
                       </td>
+                      <td className="px-5 py-2.5 text-right">
+                        <button
+                          onClick={() => setViendo(p)}
+                          className="foco text-[13px] text-blue-700 hover:underline font-semibold"
+                        >
+                          Ver
+                        </button>
+                      </td>
                     </tr>
                   );
                 })
@@ -182,6 +210,8 @@ export function TodosLosPerros({ perros, regiones }: { perros: PerroFila[]; regi
           </table>
         </div>
       </div>
+
+      {viendo && <PerroDetalle perro={viendo} onClose={() => setViendo(null)} />}
     </div>
   );
 }

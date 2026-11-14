@@ -22,7 +22,7 @@ export default async function PanelGrupoPage() {
   const { data: duplasData } = await supabase
     .from("duplas")
     .select(
-      "id, nreg, guia_nombre, perro_nombre, grado, tamano, categoria_nota, estado, libretas_sanitarias(estado, archivo_path, fecha_aplicacion, fecha_vencimiento)"
+      "id, nreg, microchip, guia_nombre, perro_nombre, grado, tamano, categoria_nota, estado, libretas_sanitarias(estado:estado_vigente, archivo_path, fecha_aplicacion, fecha_vencimiento), pedidos_nreg(estado, pedido_en, motivo_rechazo)"
     )
     .eq("club_id", cuenta?.club_id ?? "");
 
@@ -32,6 +32,7 @@ export default async function PanelGrupoPage() {
     return {
       id: d.id,
       nreg: d.nreg,
+      microchip: d.microchip,
       guia_nombre: d.guia_nombre,
       perro_nombre: d.perro_nombre,
       grado: d.grado,
@@ -39,6 +40,11 @@ export default async function PanelGrupoPage() {
       categoria_nota: d.categoria_nota,
       estado: d.estado,
       libreta: (libreta as DuplaConLibreta["libreta"]) ?? null,
+      // Solo importa el último pedido: uno en trámite o el rechazo más reciente.
+      pedido:
+        ((d.pedidos_nreg ?? []) as NonNullable<DuplaConLibreta["pedido"]>[]).sort((a, b) =>
+          b.pedido_en.localeCompare(a.pedido_en)
+        )[0] ?? null,
     };
   });
 

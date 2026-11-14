@@ -1,6 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { SolicitudesTabla, type Solicitud } from "./solicitudes-tabla";
 import { TodosLosPerros, type PerroFila } from "./todos-los-perros";
+import { VacunasPorVencer, type VacunaPorVencer } from "./vacunas-por-vencer";
+import { PedidosNumero, type PedidoNumero } from "./pedidos-numero";
+import { ordenNreg } from "@/lib/orden-nreg";
 
 export default async function PanelAdminPage() {
   const supabase = await createClient();
@@ -19,7 +22,7 @@ export default async function PanelAdminPage() {
   const { data: duplasData } = await supabase
     .from("duplas")
     .select(
-      "id, club_id, nreg, guia_nombre, perro_nombre, grado, tamano, estado, libretas_sanitarias(estado, archivo_path, enviada_en)"
+      "id, club_id, nreg, microchip, guia_nombre, guia_dni, guia_email, perro_nombre, grado, tamano, categoria_nota, estado, created_at, libretas_sanitarias(estado:estado_vigente, archivo_path, enviada_en, fecha_aplicacion, fecha_vencimiento, motivo_rechazo)"
     );
 
   const duplas = (duplasData ?? []).map((d) => {
@@ -28,11 +31,43 @@ export default async function PanelAdminPage() {
       estado: string;
       archivo_path: string | null;
       enviada_en: string | null;
+      fecha_aplicacion: string | null;
+      fecha_vencimiento: string | null;
+      motivo_rechazo: string | null;
     } | null;
     return { ...d, libreta };
   });
 
   const clubPorId = new Map(clubes.map((c) => [c.id, c]));
+  const duplaPorId = new Map(duplas.map((d) => [d.id, d]));
+
+  const { data: pedidosData } = await supabase
+    .from("pedidos_nreg")
+    .select("id, dupla_id, pedido_en")
+    .eq("estado", "pendiente")
+    .order("pedido_en");
+
+  const pedidosNumero: PedidoNumero[] = (pedidosData ?? []).flatMap((p) => {
+    const d = duplaPorId.get(p.dupla_id);
+    if (!d) return [];
+    return [
+      {
+        id: p.id,
+        perro_nombre: d.perro_nombre,
+        guia_nombre: d.guia_nombre,
+        tamano: d.tamano,
+        microchip: d.microchip,
+        club: clubPorId.get(d.club_id)?.nombre ?? "—",
+        pedido_en: p.pedido_en,
+      },
+    ];
+  });
+
+  const duplasConPedido = new Set((pedidosData ?? []).map((p) => p.dupla_id));
+
+  // Sugerencia para el próximo número a asignar: el más alto cargado + 1.
+  const proximoNumero =
+    Math.max(0, ...duplas.map((d) => ordenNreg(d.nreg)).filter((n) => Number.isFinite(n))) + 1;
 
   const solicitudes: Solicitud[] = duplas
     .filter((d) => d.libreta?.estado === "pendiente")
@@ -59,15 +94,31 @@ export default async function PanelAdminPage() {
     grado: d.grado,
     tamano: d.tamano,
     estado: d.estado,
+    microchip: d.microchip,
+    guia_dni: d.guia_dni,
+    guia_email: d.guia_email,
+    categoria_nota: d.categoria_nota,
+    created_at: d.created_at,
+    pedidoEnTramite: duplasConPedido.has(d.id),
+    libreta: d.libreta,
   }));
 
   const regionesUnicas = [...new Set(clubes.map((c) => c.region))].sort();
 
   const totalDuplas = duplas.length;
   const pendientes = solicitudes.length;
-  const vencidasPorVencer = duplas.filter(
-    (d) => d.libreta?.estado === "vencida" || d.libreta?.estado === "porvencer"
-  ).length;
+  // Primero las que vencen antes; las que no tienen fecha cargada, al final.
+  const vacunas: VacunaPorVencer[] = duplas
+    .filter((d) => d.libreta?.estado === "vencida" || d.libreta?.estado === "porvencer")
+    .map((d) => ({
+      duplaId: d.id,
+      perro_nombre: d.perro_nombre,
+      guia_nombre: d.guia_nombre,
+      club: clubPorId.get(d.club_id)?.nombre ?? "—",
+      estado: d.libreta!.estado as VacunaPorVencer["estado"],
+      fecha_vencimiento: d.libreta!.fecha_vencimiento,
+    }))
+    .sort((a, b) => (a.fecha_vencimiento ?? "9999").localeCompare(b.fecha_vencimiento ?? "9999"));
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -94,11 +145,8 @@ export default async function PanelAdminPage() {
                 {pendientes}
               </p>
             </div>
-            <div className="p-6">
-              <p className="text-[13px] text-slate-600">Vacunas por vencer</p>
-              <p className="font-display text-[42px] leading-none mt-2 text-amber-600 tabular font-bold">
-                {vencidasPorVencer}
-              </p>
+            <div>
+              <VacunasPorVencer vacunas={vacunas} />
             </div>
             <div className="p-6 border-l lg:border-l-0 border-slate-200">
               <p className="text-[13px] text-slate-600">Grupos homologados</p>
@@ -113,6 +161,13 @@ export default async function PanelAdminPage() {
               Solicitudes pendientes
             </h2>
             <SolicitudesTabla solicitudes={solicitudes} />
+          </div>
+
+          <div className="mt-12">
+            <h2 className="font-display text-[28px] leading-none text-blue-900 font-semibold mb-5">
+              Pedidos de nº de registro
+            </h2>
+            <PedidosNumero pedidos={pedidosNumero} proximoNumero={proximoNumero} />
           </div>
 
           <div className="mt-12">

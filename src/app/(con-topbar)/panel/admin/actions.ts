@@ -33,6 +33,28 @@ export async function aprobarSolicitud(duplaId: string) {
   return { success: true };
 }
 
+// Los permisos y validaciones de los pedidos de número viven en las funciones
+// de la base (asignar_nreg / rechazar_pedido_nreg).
+export async function asignarNumeroRegistro(pedidoId: string, nreg: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("asignar_nreg", { p_pedido_id: pedidoId, p_nreg: nreg });
+  if (error) return { error: error.message };
+
+  revalidatePath("/panel/admin");
+  revalidatePath("/panel/grupo");
+  return { success: true };
+}
+
+export async function rechazarPedidoNumero(pedidoId: string, motivo: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("rechazar_pedido_nreg", { p_pedido_id: pedidoId, p_motivo: motivo });
+  if (error) return { error: error.message };
+
+  revalidatePath("/panel/admin");
+  revalidatePath("/panel/grupo");
+  return { success: true };
+}
+
 export async function rechazarSolicitud(duplaId: string, motivo: string) {
   const supabase = await createClient();
   const adminId = await idSiEsAdmin(supabase);

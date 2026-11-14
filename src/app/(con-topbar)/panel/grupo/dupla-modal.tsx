@@ -22,6 +22,11 @@ export function DuplaModal({
   const [nombreArchivo, setNombreArchivo] = useState<string | null>(null);
   const [fechaAplicacion, setFechaAplicacion] = useState(dupla?.libreta?.fecha_aplicacion ?? "");
   const [fechaVencimiento, setFechaVencimiento] = useState(dupla?.libreta?.fecha_vencimiento ?? "");
+  const [grado, setGrado] = useState(dupla?.grado ?? "G2");
+  const esG0 = grado === "G0";
+  // Al editar no se cruza entre G0 y G1+: eso lo hace la comisión al asignar
+  // el número. Un perro con número se mueve entre G1–G3; uno sin número queda en G0.
+  const gradosPermitidos = dupla === null ? ["G0", "G1", "G2", "G3"] : dupla.nreg ? ["G1", "G2", "G3"] : ["G0"];
   const formRef = useRef<HTMLFormElement>(null);
 
   function alCambiarFechaAplicacion(iso: string) {
@@ -110,13 +115,13 @@ export function DuplaModal({
                 <span className="block text-[13px] mb-1.5 font-medium">Grado</span>
                 <select
                   name="grado"
-                  defaultValue={dupla?.grado ?? "G2"}
+                  value={grado}
+                  onChange={(e) => setGrado(e.target.value)}
                   className="foco w-full border border-slate-300 rounded px-3 py-2.5 text-[14px] text-slate-900 bg-white outline-none focus:border-blue-600"
                 >
-                  <option>G0</option>
-                  <option>G1</option>
-                  <option>G2</option>
-                  <option>G3</option>
+                  {gradosPermitidos.map((g) => (
+                    <option key={g}>{g}</option>
+                  ))}
                 </select>
               </label>
               <label className="block">
@@ -132,6 +137,53 @@ export function DuplaModal({
                   <option>Intermediate</option>
                   <option>Large</option>
                 </select>
+              </label>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <span className="block text-[13px] mb-1.5 font-medium">Nº de registro del perro</span>
+                {editando || esG0 ? (
+                  <>
+                    <p className="w-full border border-slate-200 bg-slate-50 rounded px-3 py-2.5 text-[14px] text-slate-500 tabular">
+                      {dupla?.nreg ?? "Sin número"}
+                    </p>
+                    <span className="block text-[11.5px] text-slate-400 mt-1">
+                      {dupla?.nreg
+                        ? "Lo administra la comisión."
+                        : "Para pasar a G1 se pide a la comisión desde la tabla de duplas."}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      name="nreg"
+                      type="text"
+                      inputMode="numeric"
+                      required
+                      placeholder="Ej.: 1013"
+                      className="foco w-full border border-slate-300 rounded px-3 py-2.5 text-[14px] text-slate-900 outline-none focus:border-blue-600"
+                    />
+                    <span className="block text-[11.5px] text-slate-400 mt-1">
+                      El que ya tiene asignado. Después solo lo puede cambiar la comisión.
+                    </span>
+                  </>
+                )}
+              </div>
+              <label className="block">
+                <span className="block text-[13px] mb-1.5 font-medium">
+                  Microchip
+                  {esG0 && <span className="font-normal text-slate-400"> (opcional en G0)</span>}
+                </span>
+                <input
+                  name="microchip"
+                  type="text"
+                  inputMode="numeric"
+                  required={!esG0}
+                  defaultValue={dupla?.microchip ?? ""}
+                  placeholder="Ej.: 032000123456789"
+                  className="foco w-full border border-slate-300 rounded px-3 py-2.5 text-[14px] text-slate-900 outline-none focus:border-blue-600"
+                />
               </label>
             </div>
 
