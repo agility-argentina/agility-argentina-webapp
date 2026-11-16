@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, X } from "lucide-react";
+import { AgGridReact } from "ag-grid-react";
+import type { ColDef, ICellRendererParams } from "ag-grid-community";
+import { temaGrilla, textosGrilla } from "@/lib/ag-grid";
 import { aprobarSolicitud, rechazarSolicitud } from "./actions";
 import { obtenerUrlLibreta } from "@/app/(con-topbar)/panel/grupo/actions";
 
@@ -22,6 +25,95 @@ function formatearFecha(iso: string | null) {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
+
+// Las celdas leen las acciones por contexto (se renderizan dentro del árbol
+// de React), así las columnas quedan fijas.
+type Acciones = {
+  verLibreta: (s: Solicitud) => void;
+  aprobar: (s: Solicitud) => void;
+  rechazar: (s: Solicitud) => void;
+  procesando: string | null;
+};
+const AccionesContext = createContext<Acciones | null>(null);
+
+function CeldaDocumento({ data: s }: ICellRendererParams<Solicitud>) {
+  const a = useContext(AccionesContext)!;
+  if (!s) return null;
+  return (
+    <button
+      onClick={() => a.verLibreta(s)}
+      className="foco inline-flex items-center gap-1.5 text-blue-700 hover:underline font-semibold"
+    >
+      <FileText className="w-3.5 h-3.5" /> Ver libreta
+    </button>
+  );
+}
+
+function CeldaResolucion({ data: s }: ICellRendererParams<Solicitud>) {
+  const a = useContext(AccionesContext)!;
+  if (!s) return null;
+  return (
+    <span className="whitespace-nowrap">
+      <button
+        onClick={() => a.aprobar(s)}
+        disabled={a.procesando === s.duplaId}
+        className="foco bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded px-3 py-1.5 text-[12.5px] font-semibold leading-none ml-1.5"
+      >
+        Aprobar
+      </button>
+      <button
+        onClick={() => a.rechazar(s)}
+        disabled={a.procesando === s.duplaId}
+        className="foco border border-rose-300 text-rose-700 hover:bg-rose-50 disabled:opacity-60 rounded px-3 py-1.5 text-[12.5px] font-semibold leading-none ml-1.5"
+      >
+        Rechazar
+      </button>
+    </span>
+  );
+}
+
+const COLUMNAS: ColDef<Solicitud>[] = [
+  {
+    colId: "dupla",
+    headerName: "Dupla",
+    flex: 1,
+    minWidth: 220,
+    autoHeight: true,
+    valueGetter: (p) => (p.data ? `${p.data.guia_nombre} ${p.data.perro_nombre}` : ""),
+    cellRenderer: ({ data: s }: ICellRendererParams<Solicitud>) =>
+      s && (
+        <div className="leading-tight py-2">
+          <span className="block font-semibold">{s.guia_nombre}</span>
+          <span className="block text-[12.5px] text-slate-500 mt-0.5">
+            {s.perro_nombre} · {s.grado} · {s.tamano}
+          </span>
+        </div>
+      ),
+  },
+  { field: "club", headerName: "Grupo", width: 170, cellClass: "text-slate-600" },
+  { field: "region", headerName: "Región", width: 150, cellClass: "text-slate-600" },
+  {
+    field: "enviada_en",
+    headerName: "Enviada",
+    width: 120,
+    sort: "asc",
+    valueFormatter: (p) => formatearFecha(p.value),
+    cellClass: "text-slate-500",
+    filter: false,
+  },
+  { colId: "documento", headerName: "Documento", width: 140, sortable: false, filter: false, cellRenderer: CeldaDocumento },
+  {
+    colId: "resolucion",
+    headerName: "Resolución",
+    width: 200,
+    sortable: false,
+    filter: false,
+    resizable: false,
+    headerClass: "ag-right-aligned-header",
+    cellClass: "text-right",
+    cellRenderer: CeldaResolucion,
+  },
+];
 
 export function SolicitudesTabla({ solicitudes }: { solicitudes: Solicitud[] }) {
   const router = useRouter();
@@ -53,6 +145,11 @@ export function SolicitudesTabla({ solicitudes }: { solicitudes: Solicitud[] }) 
     }
     router.refresh();
     setAviso({ texto: `${s.perro_nombre} y ${s.guia_nombre} ya pueden inscribirse a fechas.`, tipo: "info" });
+  }
+
+  function abrirRechazo(s: Solicitud) {
+    setRechazando(s);
+    setMotivo("");
   }
 
   async function confirmarRechazo() {
@@ -87,72 +184,18 @@ export function SolicitudesTabla({ solicitudes }: { solicitudes: Solicitud[] }) 
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left">
-            <thead className="bg-slate-50 border-b border-slate-200 text-[12px] text-slate-600">
-              <tr>
-                <th className="px-5 py-3 font-semibold">Dupla</th>
-                <th className="px-5 py-3 font-semibold">Grupo</th>
-                <th className="px-5 py-3 font-semibold">Región</th>
-                <th className="px-5 py-3 font-semibold">Enviada</th>
-                <th className="px-5 py-3 font-semibold">Documento</th>
-                <th className="px-5 py-3 text-right font-semibold">Resolución</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-[13.5px]">
-              {solicitudes.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-slate-500">
-                    No queda nada por revisar. Las próximas solicitudes de los grupos aparecen acá.
-                  </td>
-                </tr>
-              ) : (
-                solicitudes.map((s) => (
-                  <tr key={s.duplaId} className="hover:bg-blue-50/40 transition-colors">
-                    <td className="px-5 py-3.5">
-                      <span className="block font-semibold">{s.guia_nombre}</span>
-                      <span className="block text-[12.5px] text-slate-500">
-                        {s.perro_nombre} · {s.grado} · {s.tamano}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-slate-600">{s.club}</td>
-                    <td className="px-5 py-3.5 text-slate-600">{s.region}</td>
-                    <td className="px-5 py-3.5 text-slate-500">{formatearFecha(s.enviada_en)}</td>
-                    <td className="px-5 py-3.5">
-                      <button
-                        onClick={() => verLibreta(s)}
-                        className="foco inline-flex items-center gap-1.5 text-blue-700 hover:underline font-semibold"
-                      >
-                        <FileText className="w-3.5 h-3.5" /> Ver libreta
-                      </button>
-                    </td>
-                    <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                      <button
-                        onClick={() => aprobar(s)}
-                        disabled={procesando === s.duplaId}
-                        className="foco bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded px-3 py-1.5 text-[12.5px] font-semibold ml-1.5"
-                      >
-                        Aprobar
-                      </button>
-                      <button
-                        onClick={() => {
-                          setRechazando(s);
-                          setMotivo("");
-                        }}
-                        disabled={procesando === s.duplaId}
-                        className="foco border border-rose-300 text-rose-700 hover:bg-rose-50 disabled:opacity-60 rounded px-3 py-1.5 text-[12.5px] font-semibold ml-1.5"
-                      >
-                        Rechazar
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <AccionesContext.Provider value={{ verLibreta, aprobar, rechazar: abrirRechazo, procesando }}>
+        <AgGridReact<Solicitud>
+          theme={temaGrilla}
+          localeText={textosGrilla}
+          rowData={solicitudes}
+          columnDefs={COLUMNAS}
+          defaultColDef={{ sortable: true, resizable: true, filter: true }}
+          getRowId={(p) => p.data.duplaId}
+          domLayout="autoHeight"
+          overlayNoRowsTemplate="No queda nada por revisar. Las próximas solicitudes de los grupos aparecen acá."
+        />
+      </AccionesContext.Provider>
 
       {rechazando && (
         <div className="fixed inset-0 z-50">

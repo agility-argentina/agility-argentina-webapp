@@ -29,6 +29,9 @@ export async function guardarDupla(formData: FormData) {
   const guia_nombre = String(formData.get("guia_nombre") ?? "").trim();
   const perro_nombre = String(formData.get("perro_nombre") ?? "").trim();
   const grado = String(formData.get("grado") ?? "G2");
+  // Un G0 sin número que el club pasa a G1 en el formulario: se guarda como G0
+  // y se le pide el número a la comisión, que es quien lo pasa a G1.
+  const pedirNumero = Boolean(duplaId) && formData.get("pedir_numero") === "1";
   const tamano = String(formData.get("tamano") ?? "Intermediate");
   const archivo = formData.get("archivo") as File | null;
   const fecha_aplicacion = String(formData.get("fecha_aplicacion") ?? "").trim() || null;
@@ -49,7 +52,25 @@ export async function guardarDupla(formData: FormData) {
     return { error: "Para dar de alta un perro de G1, G2 o G3 hace falta su número de registro." };
   }
 
-  const campos = { guia_nombre, perro_nombre, grado, tamano, microchip };
+  // Si se pide el número, se validan los requisitos antes de guardar nada,
+  // para no dejar cambios a medias. `pedir_nreg` los vuelve a validar después.
+  if (pedirNumero) {
+    // La libreta no es requisito: tiene su propio circuito de revisión.
+    if (!microchip) return { error: "Para pedir el número hace falta el microchip del perro." };
+    const { data: actual } = await supabase
+      .from("duplas")
+      .select("estado, pedidos_nreg(estado)")
+      .eq("id", String(duplaId))
+      .single();
+    const pedidos = (actual?.pedidos_nreg ?? []) as { estado: string }[];
+
+    if (actual?.estado !== "activa") return { error: "La dupla tiene que estar activa para pedir el número." };
+    if (pedidos.some((p) => p.estado === "pendiente")) {
+      return { error: "Ya hay un pedido de número en trámite para este perro." };
+    }
+  }
+
+  const campos = { guia_nombre, perro_nombre, grado: pedirNumero ? "G0" : grado, tamano, microchip };
   const mensajeError = (error: { code?: string; message: string } | null, porDefecto: string) =>
     error?.code === "23505" ? `El número de registro ${nreg} ya está cargado en otro perro.` : (error?.message ?? porDefecto);
 
@@ -101,18 +122,17 @@ export async function guardarDupla(formData: FormData) {
   }
 
   revalidatePath("/panel/grupo");
-  return { success: true };
-}
 
-// Las validaciones (G0, microchip, libreta vigente, sin pedido en trámite)
-// las hace la función en la base; acá solo se pasa el mensaje.
-export async function pedirNumeroRegistro(duplaId: string) {
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("pedir_nreg", { p_dupla_id: duplaId });
-  if (error) return { error: error.message };
+  if (pedirNumero) {
+    // Los requisitos (dupla activa, microchip, sin pedido en trámite) los
+    // vuelve a validar `pedir_nreg` en la base.
+    const { error } = await supabase.rpc("pedir_nreg", { p_dupla_id: duplaGuardada.id });
+    if (error) {
+      return { error: `Se guardaron los cambios, pero no se pudo pedir el número: ${error.message}`, guardado: true };
+    }
+    revalidatePath("/panel/admin");
+  }
 
-  revalidatePath("/panel/grupo");
-  revalidatePath("/panel/admin");
   return { success: true };
 }
 

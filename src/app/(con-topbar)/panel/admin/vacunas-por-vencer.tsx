@@ -48,13 +48,13 @@ export function VacunasPorVencer({ vacunas }: { vacunas: VacunaPorVencer[] }) {
       <button
         type="button"
         onClick={() => setAbierto(true)}
-        className="foco block w-full h-full p-6 text-left hover:bg-amber-50/50 transition-colors"
+        className="foco block w-full h-full px-5 py-4 text-left hover:bg-amber-50/50 transition-colors"
       >
         <p className="text-[13px] text-slate-600">Vacunas por vencer</p>
-        <p className="font-display text-[42px] leading-none mt-2 text-amber-600 tabular font-bold">
+        <p className="font-display text-[34px] leading-none mt-1.5 text-amber-600 tabular font-bold">
           {vacunas.length}
         </p>
-        <p className="text-[12px] text-blue-700 font-semibold mt-2">Ver detalle</p>
+        <p className="text-[12px] text-blue-700 font-semibold mt-1.5">Ver detalle</p>
       </button>
 
       {abierto && (

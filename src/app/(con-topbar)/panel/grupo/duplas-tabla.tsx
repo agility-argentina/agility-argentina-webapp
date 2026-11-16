@@ -1,13 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { createContext, useContext, useMemo, useState } from "react";
 import { Plus, Dog } from "lucide-react";
-import { obtenerUrlLibreta, pedirNumeroRegistro } from "./actions";
+import { AgGridReact } from "ag-grid-react";
+import type { ColDef, ICellRendererParams } from "ag-grid-community";
+import { obtenerUrlLibreta } from "./actions";
 import { DuplaModal } from "./dupla-modal";
-import { useOrden } from "@/lib/use-orden";
-import { ThOrdenable } from "@/components/th-ordenable";
-import { ordenNreg } from "@/lib/orden-nreg";
+import { compararNreg, temaGrilla, textosGrilla } from "@/lib/ag-grid";
 
 export type DuplaConLibreta = {
   id: string;
@@ -32,16 +31,6 @@ export type DuplaConLibreta = {
   } | null;
 };
 
-// Mismos requisitos que valida `pedir_nreg` en la base; acá solo sirven para
-// explicarle al club qué le falta sin tener que ir al servidor.
-function faltaParaPedirNumero(d: DuplaConLibreta) {
-  if (d.estado !== "activa") return "La dupla tiene que estar activa para pedir el número.";
-  if (!d.microchip?.trim()) return `Cargá el microchip de ${d.perro_nombre} (en Editar) antes de pedir el número.`;
-  if (d.libreta?.estado !== "aprobado" && d.libreta?.estado !== "porvencer")
-    return `La libreta sanitaria de ${d.perro_nombre} tiene que estar aprobada y vigente.`;
-  return null;
-}
-
 const LIBRETA: Record<string, { texto: string; clase: string; punto: string }> = {
   aprobado: { texto: "Aprobada", clase: "bg-emerald-50 text-emerald-800 ring-emerald-200", punto: "bg-emerald-500" },
   pendiente: { texto: "Pendiente revisión", clase: "bg-blue-50 text-blue-800 ring-blue-200", punto: "bg-blue-500" },
@@ -56,101 +45,174 @@ const ESTADO_DUPLA = {
   inactiva: { texto: "No activa", clase: "bg-slate-100 text-slate-500 ring-slate-200" },
 };
 
-type ColumnaOrden = "nreg" | "categoria" | "perro" | "guia" | "libreta" | "estado";
+const textoLibreta = (d: DuplaConLibreta) => LIBRETA[d.libreta?.estado ?? "sinlibreta"].texto;
 
-const COLUMNAS: { key: ColumnaOrden; etiqueta: string }[] = [
-  { key: "nreg", etiqueta: "Nº Reg." },
-  { key: "categoria", etiqueta: "Categoría" },
-  { key: "perro", etiqueta: "Perro" },
-  { key: "guia", etiqueta: "Guía" },
-  { key: "libreta", etiqueta: "Libreta sanitaria" },
-  { key: "estado", etiqueta: "Estado" },
-];
+// Las celdas de AG Grid se renderizan dentro del árbol de React, así que leen
+// las acciones y el estado de carga por contexto; las columnas no se rearman.
+type Acciones = {
+  verLibreta: (d: DuplaConLibreta) => void;
+  editar: (d: DuplaConLibreta) => void;
+  avisar: (texto: string) => void;
+  cargandoLibreta: string | null;
+};
+const AccionesContext = createContext<Acciones | null>(null);
 
-function comparar(a: DuplaConLibreta, b: DuplaConLibreta, columna: ColumnaOrden, asc: boolean) {
-  if (columna === "nreg") {
-    const an = ordenNreg(a.nreg);
-    const bn = ordenNreg(b.nreg);
-    if (an === Infinity && bn === Infinity) return 0;
-    if (an === Infinity) return 1; // los sin número siempre al final
-    if (bn === Infinity) return -1;
-    return asc ? an - bn : bn - an;
-  }
-
-  let valorA: string;
-  let valorB: string;
-  switch (columna) {
-    case "categoria":
-      valorA = `${a.grado} ${a.tamano}`;
-      valorB = `${b.grado} ${b.tamano}`;
-      break;
-    case "perro":
-      valorA = a.perro_nombre;
-      valorB = b.perro_nombre;
-      break;
-    case "guia":
-      valorA = a.guia_nombre;
-      valorB = b.guia_nombre;
-      break;
-    case "libreta":
-      valorA = LIBRETA[a.libreta?.estado ?? "sinlibreta"].texto;
-      valorB = LIBRETA[b.libreta?.estado ?? "sinlibreta"].texto;
-      break;
-    case "estado":
-      valorA = ESTADO_DUPLA[a.estado].texto;
-      valorB = ESTADO_DUPLA[b.estado].texto;
-      break;
-  }
-  const resultado = valorA.localeCompare(valorB);
-  return asc ? resultado : -resultado;
+function CeldaNreg({ data: d }: ICellRendererParams<DuplaConLibreta>) {
+  const acciones = useContext(AccionesContext)!;
+  if (!d) return null;
+  return (
+    <div className="leading-tight py-2">
+      <span className="tabular font-semibold">{d.nreg ?? "—"}</span>
+      {!d.nreg && d.pedido?.estado === "pendiente" && (
+        <span className="block text-[11.5px] font-semibold text-blue-700 mt-0.5">En trámite</span>
+      )}
+      {!d.nreg && d.pedido?.estado === "rechazado" && (
+        <button
+          type="button"
+          onClick={() =>
+            acciones.avisar(
+              `La comisión rechazó el pedido de ${d.perro_nombre}: ${d.pedido?.motivo_rechazo ?? "sin motivo"}. Cuando esté resuelto, volvé a pedirlo desde Editar eligiendo G1.`
+            )
+          }
+          className="foco block text-[11.5px] font-semibold text-rose-700 hover:underline mt-0.5"
+        >
+          Pedido rechazado
+        </button>
+      )}
+    </div>
+  );
 }
+
+function CeldaCategoria({ data: d }: ICellRendererParams<DuplaConLibreta>) {
+  if (!d) return null;
+  return (
+    <div className="leading-tight py-2 text-slate-600">
+      {d.grado} · {d.tamano}
+      {d.categoria_nota && (
+        <span className="block text-[11.5px] text-slate-400 italic mt-0.5 whitespace-normal">{d.categoria_nota}</span>
+      )}
+    </div>
+  );
+}
+
+function CeldaAcciones({ data: d }: ICellRendererParams<DuplaConLibreta>) {
+  const a = useContext(AccionesContext)!;
+  if (!d) return null;
+  return (
+    <span className="whitespace-nowrap">
+      <button
+        onClick={() => a.verLibreta(d)}
+        disabled={a.cargandoLibreta === d.id}
+        className="foco text-[13px] text-blue-700 hover:underline font-semibold disabled:opacity-50"
+      >
+        {a.cargandoLibreta === d.id ? "Abriendo…" : "Ver libreta"}
+      </button>
+      <span className="text-slate-300 mx-1.5">·</span>
+      <button onClick={() => a.editar(d)} className="foco text-[13px] text-slate-600 hover:underline font-semibold">
+        Editar
+      </button>
+    </span>
+  );
+}
+
+const COLUMNAS: ColDef<DuplaConLibreta>[] = [
+  {
+    field: "nreg",
+    headerName: "Nº Reg.",
+    width: 130,
+    sort: "asc",
+    comparator: compararNreg,
+    autoHeight: true,
+    filter: "agNumberColumnFilter",
+    filterValueGetter: (p) => (p.data?.nreg ? Number(p.data.nreg) : null),
+    cellRenderer: CeldaNreg,
+  },
+  {
+    colId: "categoria",
+    headerName: "Categoría",
+    width: 190,
+    autoHeight: true,
+    valueGetter: (p) => (p.data ? `${p.data.grado} · ${p.data.tamano}` : ""),
+    cellRenderer: CeldaCategoria,
+  },
+  {
+    field: "perro_nombre",
+    headerName: "Perro",
+    flex: 1,
+    minWidth: 130,
+    cellRenderer: (p: ICellRendererParams<DuplaConLibreta>) => (
+      <span className="inline-flex items-center gap-2">
+        <Dog className="w-3.5 h-3.5 text-slate-300" /> {p.value}
+      </span>
+    ),
+  },
+  { field: "guia_nombre", headerName: "Guía", flex: 1, minWidth: 150, cellClass: "font-semibold" },
+  {
+    colId: "libreta",
+    headerName: "Libreta sanitaria",
+    width: 180,
+    valueGetter: (p) => (p.data ? textoLibreta(p.data) : ""),
+    cellRenderer: (p: ICellRendererParams<DuplaConLibreta>) => {
+      const libreta = LIBRETA[p.data?.libreta?.estado ?? "sinlibreta"];
+      return (
+        <span
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ring-1 ${libreta.clase} text-[12px] font-semibold leading-none`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${libreta.punto}`} />
+          {libreta.texto}
+        </span>
+      );
+    },
+  },
+  {
+    colId: "estado",
+    headerName: "Estado",
+    width: 120,
+    valueGetter: (p) => (p.data ? ESTADO_DUPLA[p.data.estado].texto : ""),
+    cellRenderer: (p: ICellRendererParams<DuplaConLibreta>) => {
+      if (!p.data) return null;
+      const estado = ESTADO_DUPLA[p.data.estado];
+      return (
+        <span className={`inline-flex items-center px-2.5 py-1 rounded-full ring-1 ${estado.clase} text-[12px] font-semibold leading-none`}>
+          {estado.texto}
+        </span>
+      );
+    },
+  },
+  {
+    colId: "acciones",
+    headerName: "Acciones",
+    width: 190,
+    sortable: false,
+    filter: false,
+    resizable: false,
+    headerClass: "ag-right-aligned-header",
+    cellClass: "text-right",
+    cellRenderer: CeldaAcciones,
+  },
+];
 
 export function DuplasTabla({ duplas }: { duplas: DuplaConLibreta[] }) {
   const [modal, setModal] = useState<"cerrado" | "nueva" | DuplaConLibreta>("cerrado");
-  const router = useRouter();
   const [cargandoLibreta, setCargandoLibreta] = useState<string | null>(null);
-  const [pidiendo, setPidiendo] = useState<string | null>(null);
   const [aviso, setAviso] = useState<{ texto: string; tipo: "error" | "info" } | null>(null);
 
   const [busqueda, setBusqueda] = useState("");
   const [mostrarInactivas, setMostrarInactivas] = useState(false);
   const [filtroLibreta, setFiltroLibreta] = useState<"todas" | keyof typeof LIBRETA>("todas");
-  const { orden, ordenarPor } = useOrden<ColumnaOrden>("nreg");
 
   const activas = duplas.filter((d) => d.estado === "activa").length;
   const aResolver = duplas.filter((d) => d.libreta?.estado === "porvencer" || d.libreta?.estado === "vencida").length;
 
-  const visibles = useMemo(() => {
-    const texto = busqueda.trim().toLowerCase();
-    return duplas
-      .filter((d) => {
-        if (texto && !`${d.perro_nombre} ${d.guia_nombre}`.toLowerCase().includes(texto)) return false;
+  const visibles = useMemo(
+    () =>
+      duplas.filter((d) => {
         if (!mostrarInactivas && d.estado !== "activa") return false;
         if (filtroLibreta !== "todas" && (d.libreta?.estado ?? "sinlibreta") !== filtroLibreta) return false;
         return true;
-      })
-      .sort((a, b) => comparar(a, b, orden.columna, orden.asc));
-  }, [duplas, busqueda, mostrarInactivas, filtroLibreta, orden]);
-
-  async function pedirNumero(d: DuplaConLibreta) {
-    const falta = faltaParaPedirNumero(d);
-    if (falta) {
-      setAviso({ texto: falta, tipo: "info" });
-      return;
-    }
-    setPidiendo(d.id);
-    const resultado = await pedirNumeroRegistro(d.id);
-    setPidiendo(null);
-    if (resultado.error) {
-      setAviso({ texto: resultado.error, tipo: "error" });
-      return;
-    }
-    router.refresh();
-    setAviso({
-      texto: `Listo, se le pidió a la comisión el número de registro de ${d.perro_nombre}. Cuando lo asignen pasa a G1.`,
-      tipo: "info",
-    });
-  }
+      }),
+    [duplas, mostrarInactivas, filtroLibreta]
+  );
 
   async function verLibreta(d: DuplaConLibreta) {
     if (!d.libreta?.archivo_path) {
@@ -166,6 +228,13 @@ export function DuplasTabla({ duplas }: { duplas: DuplaConLibreta[] }) {
     }
     window.open(resultado.url, "_blank", "noopener,noreferrer");
   }
+
+  const acciones: Acciones = {
+    verLibreta,
+    editar: (d) => setModal(d),
+    avisar: (texto) => setAviso({ texto, tipo: "error" }),
+    cargandoLibreta,
+  };
 
   return (
     <div>
@@ -184,7 +253,7 @@ export function DuplasTabla({ duplas }: { duplas: DuplaConLibreta[] }) {
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
         <div className="flex flex-wrap gap-x-8 gap-y-3 text-[13.5px]">
           <p className="text-slate-600">
             Duplas del grupo: <span className="text-ink tabular font-semibold">{duplas.length}</span>
@@ -204,12 +273,12 @@ export function DuplasTabla({ duplas }: { duplas: DuplaConLibreta[] }) {
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-3 mb-4">
+      <div className="flex flex-wrap gap-3 mb-3">
         <input
           type="text"
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar por perro o guía…"
+          placeholder="Buscar en todas las columnas…"
           className="foco flex-1 min-w-[200px] border border-slate-300 rounded px-3 py-2 text-[13.5px] text-slate-900 outline-none focus:border-blue-600"
         />
         <label className="foco inline-flex items-center gap-2 px-3 py-2 text-[13.5px] text-slate-700 cursor-pointer whitespace-nowrap">
@@ -235,115 +304,26 @@ export function DuplasTabla({ duplas }: { duplas: DuplaConLibreta[] }) {
         </select>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left">
-            <thead className="bg-slate-50 border-b border-slate-200 text-[12px] text-slate-600">
-              <tr>
-                {COLUMNAS.map((c) => (
-                  <ThOrdenable key={c.key} columna={c.key} etiqueta={c.etiqueta} orden={orden} onClick={ordenarPor} />
-                ))}
-                <th className="px-5 py-3 text-right font-semibold">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-[13.5px]">
-              {visibles.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-slate-500">
-                    {duplas.length === 0
-                      ? "Todavía no hay duplas cargadas. Registrá la primera con el botón de arriba."
-                      : "Ninguna dupla coincide con el filtro."}
-                  </td>
-                </tr>
-              ) : (
-                visibles.map((d) => {
-                  const libretaKey = d.libreta?.estado ?? "sinlibreta";
-                  const libreta = LIBRETA[libretaKey];
-                  const estado = ESTADO_DUPLA[d.estado];
-                  return (
-                    <tr key={d.id} className="hover:bg-blue-50/40 transition-colors">
-                      <td className="px-5 py-3.5 tabular font-semibold">
-                        {d.nreg ?? "—"}
-                        {!d.nreg && d.pedido?.estado === "pendiente" && (
-                          <span className="block text-[11.5px] font-semibold text-blue-700 mt-0.5">En trámite</span>
-                        )}
-                        {!d.nreg && d.pedido?.estado === "rechazado" && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setAviso({
-                                texto: `La comisión rechazó el pedido de ${d.perro_nombre}: ${d.pedido?.motivo_rechazo ?? "sin motivo"}. Podés volver a pedirlo cuando esté resuelto.`,
-                                tipo: "error",
-                              })
-                            }
-                            className="foco block text-[11.5px] font-semibold text-rose-700 hover:underline mt-0.5"
-                          >
-                            Pedido rechazado
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-600">
-                        {d.grado} · {d.tamano}
-                        {d.categoria_nota && (
-                          <span className="block text-[11.5px] text-slate-400 italic mt-0.5">{d.categoria_nota}</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="inline-flex items-center gap-2">
-                          <Dog className="w-3.5 h-3.5 text-slate-300" /> {d.perro_nombre}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 font-semibold">{d.guia_nombre}</td>
-                      <td className="px-5 py-3.5">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ring-1 ${libreta.clase} text-[12px] font-semibold`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${libreta.punto}`} />
-                          {libreta.texto}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full ring-1 ${estado.clase} text-[12px] font-semibold`}>
-                          {estado.texto}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                        <button
-                          onClick={() => verLibreta(d)}
-                          disabled={cargandoLibreta === d.id}
-                          className="foco text-[13px] text-blue-700 hover:underline font-semibold disabled:opacity-50"
-                        >
-                          {cargandoLibreta === d.id ? "Abriendo…" : "Ver libreta"}
-                        </button>
-                        <span className="text-slate-300 mx-1.5">·</span>
-                        <button
-                          onClick={() => setModal(d)}
-                          className="foco text-[13px] text-slate-600 hover:underline font-semibold"
-                        >
-                          Editar
-                        </button>
-                        {!d.nreg && d.pedido?.estado !== "pendiente" && (
-                          <>
-                            <span className="text-slate-300 mx-1.5">·</span>
-                            <button
-                              onClick={() => pedirNumero(d)}
-                              disabled={pidiendo === d.id}
-                              title={faltaParaPedirNumero(d) ?? "Pedirle a la comisión el número de registro para pasar a G1"}
-                              className="foco text-[13px] text-blue-700 hover:underline font-semibold disabled:opacity-50"
-                            >
-                              {pidiendo === d.id ? "Pidiendo…" : "Pedir nº"}
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <AccionesContext.Provider value={acciones}>
+        <AgGridReact<DuplaConLibreta>
+          theme={temaGrilla}
+          localeText={textosGrilla}
+          rowData={visibles}
+          columnDefs={COLUMNAS}
+          defaultColDef={{ sortable: true, resizable: true, filter: true }}
+          getRowId={(p) => p.data.id}
+          quickFilterText={busqueda}
+          domLayout="autoHeight"
+          pagination
+          paginationPageSize={25}
+          paginationPageSizeSelector={[25, 50, 100]}
+          overlayNoRowsTemplate={
+            duplas.length === 0
+              ? "Todavía no hay duplas cargadas. Registrá la primera con el botón de arriba."
+              : "Ninguna dupla coincide con el filtro."
+          }
+        />
+      </AccionesContext.Provider>
 
       <p className="mt-4 text-[12.5px] text-slate-500">
         Las duplas con libreta vencida no pueden inscribirse a competencias hasta subir el comprobante actualizado.

@@ -7,7 +7,7 @@ import { guardarDupla } from "./actions";
 import type { DuplaConLibreta } from "./duplas-tabla";
 import { FechaInput } from "@/components/fecha-input";
 
-type EstadoAccion = { error?: string; success?: boolean };
+type EstadoAccion = { error?: string; success?: boolean; guardado?: boolean };
 
 const estadoInicial: EstadoAccion = {};
 
@@ -24,10 +24,26 @@ export function DuplaModal({
   const [fechaVencimiento, setFechaVencimiento] = useState(dupla?.libreta?.fecha_vencimiento ?? "");
   const [grado, setGrado] = useState(dupla?.grado ?? "G2");
   const esG0 = grado === "G0";
-  // Al editar no se cruza entre G0 y G1+: eso lo hace la comisión al asignar
-  // el número. Un perro con número se mueve entre G1–G3; uno sin número queda en G0.
-  const gradosPermitidos = dupla === null ? ["G0", "G1", "G2", "G3"] : dupla.nreg ? ["G1", "G2", "G3"] : ["G0"];
+  // Al editar, un perro con número se mueve entre G1–G3. Uno en G0 puede elegir
+  // G1: se guarda como G0 y se le pide el número a la comisión, que es quien
+  // lo pasa a G1. Si ya hay un pedido en trámite, queda fijo en G0.
+  const numeroEnTramite = dupla?.pedido?.estado === "pendiente";
+  const gradosPermitidos =
+    dupla === null ? ["G0", "G1", "G2", "G3"] : dupla.nreg ? ["G1", "G2", "G3"] : numeroEnTramite ? ["G0"] : ["G0", "G1"];
+  const pidiendoNumero = dupla !== null && !dupla.nreg && grado === "G1";
+  // Lo que impide pedir el número y no se resuelve en este formulario. El
+  // microchip no está acá porque el campo ya es obligatorio al elegir G1, y
+  // la libreta no es requisito: tiene su propio circuito de revisión.
+  const faltaParaPedir: string[] = [];
+  if (pidiendoNumero && dupla.estado !== "activa") faltaParaPedir.push("La dupla tiene que estar activa.");
   const formRef = useRef<HTMLFormElement>(null);
+  // El botón de guardar queda deshabilitado mientras falte algún campo
+  // obligatorio. Se usa la validación nativa de los inputs (required/pattern),
+  // así la regla vive en un solo lugar: el propio campo.
+  const [completo, setCompleto] = useState(false);
+  // Después de un render, para leer los `required` ya actualizados (cambian con el grado).
+  const revisarCompleto = () =>
+    requestAnimationFrame(() => setCompleto(formRef.current?.checkValidity() ?? false));
 
   function alCambiarFechaAplicacion(iso: string) {
     setFechaAplicacion(iso);
@@ -39,12 +55,19 @@ export function DuplaModal({
 
   const [estado, formAction, pendiente] = useActionState(async (_prev: EstadoAccion, formData: FormData) => {
     const resultado = await guardarDupla(formData);
+    // Si se guardó pero falló el pedido de número, se refresca igual y el
+    // modal queda abierto mostrando por qué.
+    if (resultado.guardado) router.refresh();
     if (resultado.success) {
       router.refresh();
       onClose();
     }
     return resultado;
   }, estadoInicial);
+
+  useEffect(() => {
+    revisarCompleto();
+  }, []);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -78,7 +101,7 @@ export function DuplaModal({
             </button>
           </div>
 
-          <form ref={formRef} action={formAction} className="px-6 py-6 space-y-5">
+          <form ref={formRef} action={formAction} onInput={revisarCompleto} className="px-6 py-6 space-y-5">
             {editando && <input type="hidden" name="dupla_id" value={dupla.id} />}
 
             {estado.error && (
@@ -93,6 +116,7 @@ export function DuplaModal({
                 name="guia_nombre"
                 type="text"
                 required
+                pattern=".*\S.*"
                 defaultValue={dupla?.guia_nombre ?? ""}
                 placeholder="Ej.: Martina Ferreyra"
                 className="foco w-full border border-slate-300 rounded px-3 py-2.5 text-[14px] text-slate-900 outline-none focus:border-blue-600"
@@ -106,6 +130,7 @@ export function DuplaModal({
                   name="perro_nombre"
                   type="text"
                   required
+                  pattern=".*\S.*"
                   defaultValue={dupla?.perro_nombre ?? ""}
                   placeholder="Ej.: Tango"
                   className="foco w-full border border-slate-300 rounded px-3 py-2.5 text-[14px] text-slate-900 outline-none focus:border-blue-600"
@@ -113,16 +138,30 @@ export function DuplaModal({
               </label>
               <label className="block">
                 <span className="block text-[13px] mb-1.5 font-medium">Grado</span>
-                <select
-                  name="grado"
-                  value={grado}
-                  onChange={(e) => setGrado(e.target.value)}
-                  className="foco w-full border border-slate-300 rounded px-3 py-2.5 text-[14px] text-slate-900 bg-white outline-none focus:border-blue-600"
-                >
-                  {gradosPermitidos.map((g) => (
-                    <option key={g}>{g}</option>
-                  ))}
-                </select>
+                {gradosPermitidos.length === 1 ? (
+                  // G0 con el pedido de número en trámite.
+                  <>
+                    <input type="hidden" name="grado" value={grado} />
+                    <p className="w-full border border-slate-200 bg-slate-50 rounded px-3 py-2.5 text-[14px] text-slate-500">
+                      {grado}
+                    </p>
+                    <span className="block text-[11.5px] text-slate-400 mt-1">Nº de registro en trámite.</span>
+                  </>
+                ) : (
+                  <select
+                    name="grado"
+                    value={grado}
+                    onChange={(e) => {
+                      setGrado(e.target.value);
+                      revisarCompleto();
+                    }}
+                    className="foco w-full border border-slate-300 rounded px-3 py-2.5 text-[14px] text-slate-900 bg-white outline-none focus:border-blue-600"
+                  >
+                    {gradosPermitidos.map((g) => (
+                      <option key={g}>{g}</option>
+                    ))}
+                  </select>
+                )}
               </label>
               <label className="block">
                 <span className="block text-[13px] mb-1.5 font-medium">Tamaño</span>
@@ -143,6 +182,7 @@ export function DuplaModal({
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
                 <span className="block text-[13px] mb-1.5 font-medium">Nº de registro del perro</span>
+                {pidiendoNumero && <input type="hidden" name="pedir_numero" value="1" />}
                 {editando || esG0 ? (
                   <>
                     <p className="w-full border border-slate-200 bg-slate-50 rounded px-3 py-2.5 text-[14px] text-slate-500 tabular">
@@ -151,7 +191,11 @@ export function DuplaModal({
                     <span className="block text-[11.5px] text-slate-400 mt-1">
                       {dupla?.nreg
                         ? "Lo administra la comisión."
-                        : "Para pasar a G1 se pide a la comisión desde la tabla de duplas."}
+                        : numeroEnTramite
+                          ? "Pedido a la comisión, en trámite."
+                          : pidiendoNumero
+                            ? "Se lo pedimos a la comisión al guardar. Sigue en G0 hasta que lo asignen."
+                            : "Para pasar a G1, elegí G1 en Grado."}
                     </span>
                   </>
                 ) : (
@@ -161,6 +205,7 @@ export function DuplaModal({
                       type="text"
                       inputMode="numeric"
                       required
+                      pattern=".*\S.*"
                       placeholder="Ej.: 1013"
                       className="foco w-full border border-slate-300 rounded px-3 py-2.5 text-[14px] text-slate-900 outline-none focus:border-blue-600"
                     />
@@ -180,6 +225,8 @@ export function DuplaModal({
                   type="text"
                   inputMode="numeric"
                   required={!esG0}
+                  pattern=".*\S.*"
+                  title="Escribí el número de microchip"
                   defaultValue={dupla?.microchip ?? ""}
                   placeholder="Ej.: 032000123456789"
                   className="foco w-full border border-slate-300 rounded px-3 py-2.5 text-[14px] text-slate-900 outline-none focus:border-blue-600"
@@ -228,13 +275,38 @@ export function DuplaModal({
               </label>
             </div>
 
+            {faltaParaPedir.length > 0 && (
+              <div className="text-[13px] text-amber-900 bg-amber-50 border border-amber-200 rounded px-3 py-2.5">
+                <p className="font-semibold">Todavía no se puede pedir el nº de registro:</p>
+                <ul className="list-disc pl-5 mt-1 space-y-0.5">
+                  {faltaParaPedir.map((f) => (
+                    <li key={f}>{f}</li>
+                  ))}
+                </ul>
+                <p className="mt-1.5">Para guardar otros cambios, volvé el grado a G0.</p>
+              </div>
+            )}
+
+            {!completo && faltaParaPedir.length === 0 && (
+              <p className="text-[12.5px] text-slate-500">
+                Completá los campos obligatorios para poder guardar
+                {esG0 ? "." : " (en G1 o más, el microchip es obligatorio)."}
+              </p>
+            )}
+
             <div className="flex flex-col sm:flex-row-reverse gap-3 pt-3 border-t border-slate-200">
               <button
                 type="submit"
-                disabled={pendiente}
+                disabled={pendiente || !completo || faltaParaPedir.length > 0}
                 className="foco bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-5 py-2.5 rounded text-[14px] font-semibold transition-colors"
               >
-                {pendiente ? "Guardando…" : editando ? "Guardar cambios" : "Registrar dupla"}
+                {pendiente
+                  ? "Guardando…"
+                  : pidiendoNumero
+                    ? "Guardar y pedir nº de registro"
+                    : editando
+                      ? "Guardar cambios"
+                      : "Registrar dupla"}
               </button>
               <button
                 type="button"

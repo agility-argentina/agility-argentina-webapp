@@ -50,19 +50,10 @@ export default async function PanelGrupoPage() {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-[1180px] mx-auto px-5 lg:px-8 py-8">
-          <p className="text-[12.5px] text-slate-500">
-            Grupo homologado{club?.regiones ? ` · Región ${club.regiones.nombre}` : ""}
-          </p>
-          <h1 className="font-display text-[36px] leading-none mt-1.5 text-blue-900 font-bold">
-            {club?.nombre ?? "Panel de grupo"}
-          </h1>
-          <p className="mt-2 text-[13.5px] text-slate-600">{club?.ciudad}</p>
-        </div>
-      </div>
+      {/* El nombre del club se ve en la topbar; el h1 queda para lectores de pantalla. */}
+      <h1 className="sr-only">{club?.nombre ?? "Panel de grupo"}</h1>
 
-      <div className="max-w-[1180px] mx-auto px-5 lg:px-8 py-9">
+      <div className="max-w-[1180px] mx-auto px-5 lg:px-8 py-6">
         <DuplasTabla duplas={duplas} />
       </div>
     </main>

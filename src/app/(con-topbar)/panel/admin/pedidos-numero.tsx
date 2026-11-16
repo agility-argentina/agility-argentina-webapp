@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
+import { AgGridReact } from "ag-grid-react";
+import type { ColDef, ICellRendererParams } from "ag-grid-community";
+import { temaGrilla, textosGrilla } from "@/lib/ag-grid";
 import { asignarNumeroRegistro, rechazarPedidoNumero } from "./actions";
 
 export type PedidoNumero = {
@@ -21,6 +24,77 @@ function formatearFecha(iso: string) {
 
 const claseInput =
   "foco w-full border border-slate-300 rounded px-3 py-2.5 text-[14px] text-slate-900 outline-none focus:border-blue-600";
+
+// La celda de resolución abre el modal por contexto (las celdas se renderizan
+// dentro del árbol de React), así las columnas quedan fijas.
+const AbrirContext = createContext<(tipo: "asignar" | "rechazar", pedido: PedidoNumero) => void>(() => {});
+
+function CeldaResolucion({ data: p }: ICellRendererParams<PedidoNumero>) {
+  const abrir = useContext(AbrirContext);
+  if (!p) return null;
+  return (
+    <span className="whitespace-nowrap">
+      <button
+        onClick={() => abrir("asignar", p)}
+        className="foco bg-blue-600 hover:bg-blue-700 text-white rounded px-3 py-1.5 text-[12.5px] font-semibold leading-none ml-1.5"
+      >
+        Asignar número
+      </button>
+      <button
+        onClick={() => abrir("rechazar", p)}
+        className="foco border border-rose-300 text-rose-700 hover:bg-rose-50 rounded px-3 py-1.5 text-[12.5px] font-semibold leading-none ml-1.5"
+      >
+        Rechazar
+      </button>
+    </span>
+  );
+}
+
+const COLUMNAS: ColDef<PedidoNumero>[] = [
+  {
+    field: "perro_nombre",
+    headerName: "Perro",
+    flex: 1,
+    minWidth: 150,
+    autoHeight: true,
+    cellRenderer: ({ data: p }: ICellRendererParams<PedidoNumero>) =>
+      p && (
+        <div className="leading-tight py-2">
+          <span className="block font-semibold">{p.perro_nombre}</span>
+          <span className="block text-[12.5px] text-slate-500 mt-0.5">G0 · {p.tamano}</span>
+        </div>
+      ),
+  },
+  { field: "guia_nombre", headerName: "Tutor", flex: 1, minWidth: 150, cellClass: "text-slate-600" },
+  { field: "club", headerName: "Club", width: 170, cellClass: "text-slate-600" },
+  {
+    field: "microchip",
+    headerName: "Microchip",
+    width: 170,
+    valueFormatter: (p) => p.value ?? "—",
+    cellClass: "tabular text-slate-600",
+  },
+  {
+    field: "pedido_en",
+    headerName: "Pedido",
+    width: 120,
+    sort: "asc",
+    filter: false,
+    valueFormatter: (p) => formatearFecha(p.value),
+    cellClass: "text-slate-500",
+  },
+  {
+    colId: "resolucion",
+    headerName: "Resolución",
+    width: 240,
+    sortable: false,
+    filter: false,
+    resizable: false,
+    headerClass: "ag-right-aligned-header",
+    cellClass: "text-right",
+    cellRenderer: CeldaResolucion,
+  },
+];
 
 export function PedidosNumero({ pedidos, proximoNumero }: { pedidos: PedidoNumero[]; proximoNumero: number }) {
   const router = useRouter();
@@ -68,58 +142,18 @@ export function PedidosNumero({ pedidos, proximoNumero }: { pedidos: PedidoNumer
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left">
-            <thead className="bg-slate-50 border-b border-slate-200 text-[12px] text-slate-600">
-              <tr>
-                <th className="px-5 py-3 font-semibold">Perro</th>
-                <th className="px-5 py-3 font-semibold">Tutor</th>
-                <th className="px-5 py-3 font-semibold">Club</th>
-                <th className="px-5 py-3 font-semibold">Microchip</th>
-                <th className="px-5 py-3 font-semibold">Pedido</th>
-                <th className="px-5 py-3 text-right font-semibold">Resolución</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-[13.5px]">
-              {pedidos.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-slate-500">
-                    No hay pedidos de número en trámite.
-                  </td>
-                </tr>
-              ) : (
-                pedidos.map((p) => (
-                  <tr key={p.id} className="hover:bg-blue-50/40 transition-colors">
-                    <td className="px-5 py-3.5">
-                      <span className="block font-semibold">{p.perro_nombre}</span>
-                      <span className="block text-[12.5px] text-slate-500">G0 · {p.tamano}</span>
-                    </td>
-                    <td className="px-5 py-3.5 text-slate-600">{p.guia_nombre}</td>
-                    <td className="px-5 py-3.5 text-slate-600">{p.club}</td>
-                    <td className="px-5 py-3.5 tabular text-slate-600">{p.microchip ?? "—"}</td>
-                    <td className="px-5 py-3.5 text-slate-500">{formatearFecha(p.pedido_en)}</td>
-                    <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                      <button
-                        onClick={() => abrir("asignar", p)}
-                        className="foco bg-blue-600 hover:bg-blue-700 text-white rounded px-3 py-1.5 text-[12.5px] font-semibold ml-1.5"
-                      >
-                        Asignar número
-                      </button>
-                      <button
-                        onClick={() => abrir("rechazar", p)}
-                        className="foco border border-rose-300 text-rose-700 hover:bg-rose-50 rounded px-3 py-1.5 text-[12.5px] font-semibold ml-1.5"
-                      >
-                        Rechazar
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <AbrirContext.Provider value={abrir}>
+        <AgGridReact<PedidoNumero>
+          theme={temaGrilla}
+          localeText={textosGrilla}
+          rowData={pedidos}
+          columnDefs={COLUMNAS}
+          defaultColDef={{ sortable: true, resizable: true, filter: true }}
+          getRowId={(p) => p.data.id}
+          domLayout="autoHeight"
+          overlayNoRowsTemplate="No hay pedidos de número en trámite."
+        />
+      </AbrirContext.Provider>
 
       {accion && (
         <div className="fixed inset-0 z-50">

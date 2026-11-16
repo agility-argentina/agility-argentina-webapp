@@ -3,6 +3,7 @@ import { SolicitudesTabla, type Solicitud } from "./solicitudes-tabla";
 import { TodosLosPerros, type PerroFila } from "./todos-los-perros";
 import { VacunasPorVencer, type VacunaPorVencer } from "./vacunas-por-vencer";
 import { PedidosNumero, type PedidoNumero } from "./pedidos-numero";
+import { PendientesTabs } from "./pendientes-tabs";
 import { ordenNreg } from "@/lib/orden-nreg";
 
 export default async function PanelAdminPage() {
@@ -122,55 +123,65 @@ export default async function PanelAdminPage() {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-[1180px] mx-auto px-5 lg:px-8 py-8">
-          <p className="text-[12.5px] text-slate-500">Administración general</p>
-          <h1 className="font-display text-[36px] leading-none mt-1.5 text-blue-900 font-bold">
-            Estado del registro
-          </h1>
-        </div>
-      </div>
+      {/* Sin título visible; el h1 queda para lectores de pantalla. */}
+      <h1 className="sr-only">Panel de administración</h1>
 
-      <div className="max-w-[1180px] mx-auto px-5 lg:px-8 py-9">
+      <div className="max-w-[1180px] mx-auto px-5 lg:px-8 py-6">
           <div className="bg-white border border-slate-200 rounded-lg grid grid-cols-2 lg:grid-cols-4 divide-slate-200 lg:divide-x">
-            <div className="p-6 border-b lg:border-b-0 border-slate-200">
+            <div className="px-5 py-4 border-b lg:border-b-0 border-slate-200">
               <p className="text-[13px] text-slate-600">Total de duplas</p>
-              <p className="font-display text-[42px] leading-none mt-2 text-blue-900 tabular font-bold">
+              <p className="font-display text-[34px] leading-none mt-1.5 text-blue-900 tabular font-bold">
                 {totalDuplas}
               </p>
             </div>
-            <div className="p-6 border-b lg:border-b-0 border-l lg:border-l-0 border-slate-200">
+            <div className="px-5 py-4 border-b lg:border-b-0 border-l lg:border-l-0 border-slate-200">
               <p className="text-[13px] text-slate-600">Pendientes de aprobación</p>
-              <p className="font-display text-[42px] leading-none mt-2 text-blue-600 tabular font-bold">
+              <p className="font-display text-[34px] leading-none mt-1.5 text-blue-600 tabular font-bold">
                 {pendientes}
               </p>
             </div>
             <div>
               <VacunasPorVencer vacunas={vacunas} />
             </div>
-            <div className="p-6 border-l lg:border-l-0 border-slate-200">
+            <div className="px-5 py-4 border-l lg:border-l-0 border-slate-200">
               <p className="text-[13px] text-slate-600">Grupos homologados</p>
-              <p className="font-display text-[42px] leading-none mt-2 text-blue-900 tabular font-bold">
+              <p className="font-display text-[34px] leading-none mt-1.5 text-blue-900 tabular font-bold">
                 {clubes.length}
               </p>
             </div>
           </div>
 
-          <div className="mt-10">
-            <h2 className="font-display text-[28px] leading-none text-blue-900 font-semibold mb-5">
-              Solicitudes pendientes
-            </h2>
-            <SolicitudesTabla solicitudes={solicitudes} />
+          <div className="mt-7">
+            <h2 className="font-display text-[24px] leading-none text-blue-900 font-semibold mb-3">Pendientes</h2>
+            <PendientesTabs
+              tabs={[
+                {
+                  id: "registro",
+                  titulo: "Nº de registro",
+                  cantidad: pedidosNumero.length,
+                  contenido: <PedidosNumero pedidos={pedidosNumero} proximoNumero={proximoNumero} />,
+                },
+                {
+                  id: "vacunas",
+                  titulo: "Vacunas",
+                  cantidad: solicitudes.length,
+                  contenido: <SolicitudesTabla solicitudes={solicitudes} />,
+                },
+                {
+                  id: "pase-grado",
+                  titulo: "Pase de grado",
+                  cantidad: null,
+                  contenido: (
+                    <div className="bg-white border border-dashed border-slate-300 rounded-lg px-5 py-8 text-center text-[13.5px] text-slate-500">
+                      Próximamente: acá van a aparecer los pedidos de pase de grado de los clubes.
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </div>
 
-          <div className="mt-12">
-            <h2 className="font-display text-[28px] leading-none text-blue-900 font-semibold mb-5">
-              Pedidos de nº de registro
-            </h2>
-            <PedidosNumero pedidos={pedidosNumero} proximoNumero={proximoNumero} />
-          </div>
-
-          <div className="mt-12">
+          <div className="mt-8">
             <TodosLosPerros perros={perros} regiones={regionesUnicas} />
           </div>
         </div>
